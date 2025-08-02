@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
 import "./App.css";
 
 interface FileInfo {
@@ -32,6 +33,10 @@ function App() {
   const [selectedSearchResult, setSelectedSearchResult] = useState<SearchResult | null>(null);
   const [error, setError] = useState("");
   const [isSearching, setIsSearching] = useState(false);
+  const [caseSensitive, setCaseSensitive] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [sortBy, setSortBy] = useState<"relevance" | "date" | "size">("relevance");
+  const itemsPerPage = 10;
 
   async function scanDirectory() {
     try {
@@ -63,11 +68,12 @@ function App() {
       const results = await invoke<SearchResult[]>("search_files", {
         directory,
         query: searchQuery,
-        caseSensitive: false,
+        caseSensitive,
         fileExtensions: ["txt", "md", "rs", "toml", "json", "js", "ts", "tsx"],
       });
       console.log("Search results:", results);
       setSearchResults(results);
+      setCurrentPage(1);
     } catch (e) {
       console.error("Search error:", e);
       setError(String(e));
@@ -83,6 +89,40 @@ function App() {
     } catch (e) {
       setError(String(e));
     }
+  }
+
+  async function selectDirectory() {
+    try {
+      const selected = await open({
+        directory: true,
+        multiple: false,
+      });
+      
+      if (selected) {
+        setDirectory(selected as string);
+      }
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  function getSortedResults() {
+    const sorted = [...searchResults];
+    switch (sortBy) {
+      case "relevance":
+        // マッチ数の多い順
+        sorted.sort((a, b) => b.matches.length - a.matches.length);
+        break;
+      case "date":
+        // 更新日時の新しい順
+        sorted.sort((a, b) => b.modified - a.modified);
+        break;
+      case "size":
+        // ファイルサイズの大きい順
+        sorted.sort((a, b) => b.file_size - a.file_size);
+        break;
+    }
+    return sorted;
   }
 
   return (
@@ -105,6 +145,9 @@ function App() {
               placeholder="検索対象ディレクトリ（例: /Users/username/Documents）"
               style={{ width: "400px", marginRight: "10px" }}
             />
+            <button type="button" onClick={selectDirectory}>
+              フォルダを選択
+            </button>
           </div>
           <div>
             <input
@@ -117,6 +160,15 @@ function App() {
             <button type="submit" disabled={isSearching || !directory || !searchQuery}>
               {isSearching ? "検索中..." : "検索"}
             </button>
+            <label style={{ marginLeft: "20px", fontSize: "14px" }}>
+              <input
+                type="checkbox"
+                checked={caseSensitive}
+                onChange={(e) => setCaseSensitive(e.target.checked)}
+                style={{ marginRight: "5px" }}
+              />
+              大文字小文字を区別
+            </label>
           </div>
         </form>
         
@@ -136,9 +188,49 @@ function App() {
       {searchResults.length > 0 && (
         <div style={{ marginBottom: "20px" }}>
           <h3>検索結果: {searchResults.length}件のファイルが見つかりました</h3>
+          
+          {/* ソート */}
+          <div style={{ marginBottom: "10px" }}>
+            <label>
+              並び順: 
+              <select 
+                value={sortBy} 
+                onChange={(e) => setSortBy(e.target.value as "relevance" | "date" | "size")}
+                style={{ marginLeft: "10px" }}
+              >
+                <option value="relevance">関連度順</option>
+                <option value="date">更新日時順</option>
+                <option value="size">サイズ順</option>
+              </select>
+            </label>
+          </div>
+          
+          {/* ページネーション */}
+          {searchResults.length > itemsPerPage && (
+            <div style={{ marginBottom: "10px" }}>
+              <button 
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+              >
+                前へ
+              </button>
+              <span style={{ margin: "0 10px" }}>
+                ページ {currentPage} / {Math.ceil(searchResults.length / itemsPerPage)}
+              </span>
+              <button 
+                onClick={() => setCurrentPage(p => Math.min(Math.ceil(searchResults.length / itemsPerPage), p + 1))}
+                disabled={currentPage === Math.ceil(searchResults.length / itemsPerPage)}
+              >
+                次へ
+              </button>
+            </div>
+          )}
+          
           <div style={{ maxHeight: "400px", overflow: "auto", border: "1px solid #ccc", padding: "10px" }}>
             {console.log("Rendering search results:", searchResults)}
-            {searchResults.map((result, index) => {
+            {getSortedResults()
+              .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
+              .map((result, index) => {
               console.log("Rendering result:", result);
               return (
               <div key={index} style={{ marginBottom: "20px", borderBottom: "1px solid #eee", paddingBottom: "10px" }}>
@@ -208,9 +300,9 @@ function App() {
                       </div>
                       <pre style={{ margin: 0, whiteSpace: "pre-wrap", fontFamily: "monospace", fontSize: "12px", color: "black" }}>
                         {match.context.split('\n').map((line, lineIndex) => {
-                          const lowerLine = line.toLowerCase();
-                          const lowerQuery = searchQuery.toLowerCase();
-                          const matchIndex = lowerLine.indexOf(lowerQuery);
+                          const searchLine = caseSensitive ? line : line.toLowerCase();
+                          const searchPattern = caseSensitive ? searchQuery : searchQuery.toLowerCase();
+                          const matchIndex = searchLine.indexOf(searchPattern);
                           
                           if (matchIndex !== -1) {
                             return (
