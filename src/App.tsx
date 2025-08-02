@@ -1,49 +1,98 @@
 import { useState } from "react";
-import reactLogo from "./assets/react.svg";
 import { invoke } from "@tauri-apps/api/core";
 import "./App.css";
 
-function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
+interface FileInfo {
+  path: string;
+  name: string;
+  content_preview: string;
+}
 
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name }));
+function App() {
+  const [directory, setDirectory] = useState("");
+  const [files, setFiles] = useState<string[]>([]);
+  const [selectedFile, setSelectedFile] = useState<FileInfo | null>(null);
+  const [error, setError] = useState("");
+
+  async function scanDirectory() {
+    try {
+      setError("");
+      const result = await invoke<string[]>("test_scan_directory", { directory });
+      setFiles(result);
+    } catch (e) {
+      setError(String(e));
+      setFiles([]);
+    }
+  }
+
+  async function readFile(filePath: string) {
+    try {
+      setError("");
+      const result = await invoke<FileInfo>("test_read_file", { filePath });
+      setSelectedFile(result);
+    } catch (e) {
+      setError(String(e));
+      setSelectedFile(null);
+    }
   }
 
   return (
     <main className="container">
-      <h1>Welcome to Tauri + React</h1>
+      <h1>Findora - ファイル検索ツール（テスト版）</h1>
 
-      <div className="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
+      <div style={{ marginBottom: "20px" }}>
+        <h2>ディレクトリスキャンテスト</h2>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            scanDirectory();
+          }}
+        >
+          <input
+            type="text"
+            value={directory}
+            onChange={(e) => setDirectory(e.target.value)}
+            placeholder="ディレクトリパスを入力（例: /Users/username/Documents）"
+            style={{ width: "400px", marginRight: "10px" }}
+          />
+          <button type="submit">スキャン</button>
+        </form>
       </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
 
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-        />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
+      {error && (
+        <div style={{ color: "red", marginBottom: "10px" }}>
+          エラー: {error}
+        </div>
+      )}
+
+      {files.length > 0 && (
+        <div style={{ marginBottom: "20px" }}>
+          <h3>見つかったファイル（.txt, .md）: {files.length}件</h3>
+          <div style={{ maxHeight: "200px", overflow: "auto", border: "1px solid #ccc", padding: "10px" }}>
+            {files.map((file, index) => (
+              <div key={index} style={{ cursor: "pointer", padding: "2px" }}>
+                <a onClick={() => readFile(file)} style={{ color: "#0066cc" }}>
+                  {file}
+                </a>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {selectedFile && (
+        <div>
+          <h3>ファイル内容プレビュー</h3>
+          <div style={{ border: "1px solid #ccc", padding: "10px", backgroundColor: "#f5f5f5" }}>
+            <strong>ファイル名:</strong> {selectedFile.name}<br />
+            <strong>パス:</strong> {selectedFile.path}<br />
+            <strong>内容（最初の200文字）:</strong><br />
+            <pre style={{ whiteSpace: "pre-wrap", marginTop: "10px" }}>
+              {selectedFile.content_preview}
+            </pre>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
