@@ -1,5 +1,7 @@
 mod file_system;
 mod text_extractor;
+mod search;
+mod commands;
 
 use file_system::scan_directory;
 use text_extractor::extract_text_from_file;
@@ -65,7 +67,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             greet,
             test_scan_directory,
-            test_read_file
+            test_read_file,
+            commands::search::search_files,
+            commands::search::open_file
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

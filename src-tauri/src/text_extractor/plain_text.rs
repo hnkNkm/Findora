@@ -50,7 +50,7 @@ impl TextExtractor for PlainTextExtractor {
     }
 
     fn supported_extensions(&self) -> Vec<&'static str> {
-        vec!["txt", "md", "log", "cfg", "conf", "json", "xml", "yml", "yaml", "toml", "ini", "csv", "tsv"]
+        vec!["txt", "md", "log", "cfg", "conf", "json", "xml", "yml", "yaml", "toml", "ini", "csv", "tsv", "rs", "js", "ts", "tsx", "jsx", "py", "java", "cpp", "c", "h", "go", "rb", "php", "swift", "kt"]
     }
 }
 

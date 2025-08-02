@@ -8,11 +8,30 @@ interface FileInfo {
   content_preview: string;
 }
 
+interface SearchResult {
+  file_path: string;
+  file_name: string;
+  matches: Match[];
+  file_size: number;
+  modified: number;
+}
+
+interface Match {
+  line_number: number;
+  column: number;
+  context: string;
+  matched_text: string;
+}
+
 function App() {
   const [directory, setDirectory] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
   const [files, setFiles] = useState<string[]>([]);
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [selectedFile, setSelectedFile] = useState<FileInfo | null>(null);
+  const [selectedSearchResult, setSelectedSearchResult] = useState<SearchResult | null>(null);
   const [error, setError] = useState("");
+  const [isSearching, setIsSearching] = useState(false);
 
   async function scanDirectory() {
     try {
@@ -36,27 +55,76 @@ function App() {
     }
   }
 
+  async function searchFiles() {
+    try {
+      setError("");
+      setIsSearching(true);
+      console.log("Searching with params:", { directory, query: searchQuery });
+      const results = await invoke<SearchResult[]>("search_files", {
+        directory,
+        query: searchQuery,
+        caseSensitive: false,
+        fileExtensions: ["txt", "md", "rs", "toml", "json", "js", "ts", "tsx"],
+      });
+      console.log("Search results:", results);
+      setSearchResults(results);
+    } catch (e) {
+      console.error("Search error:", e);
+      setError(String(e));
+      setSearchResults([]);
+    } finally {
+      setIsSearching(false);
+    }
+  }
+
+  async function openFile(filePath: string) {
+    try {
+      await invoke("open_file", { filePath });
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
   return (
     <main className="container">
-      <h1>Findora - ファイル検索ツール（テスト版）</h1>
+      <h1>Findora - ファイル検索ツール</h1>
 
       <div style={{ marginBottom: "20px" }}>
-        <h2>ディレクトリスキャンテスト</h2>
+        <h2>ファイル検索</h2>
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            scanDirectory();
+            searchFiles();
           }}
         >
-          <input
-            type="text"
-            value={directory}
-            onChange={(e) => setDirectory(e.target.value)}
-            placeholder="ディレクトリパスを入力（例: /Users/username/Documents）"
-            style={{ width: "400px", marginRight: "10px" }}
-          />
-          <button type="submit">スキャン</button>
+          <div style={{ marginBottom: "10px" }}>
+            <input
+              type="text"
+              value={directory}
+              onChange={(e) => setDirectory(e.target.value)}
+              placeholder="検索対象ディレクトリ（例: /Users/username/Documents）"
+              style={{ width: "400px", marginRight: "10px" }}
+            />
+          </div>
+          <div>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="検索キーワード"
+              style={{ width: "300px", marginRight: "10px" }}
+            />
+            <button type="submit" disabled={isSearching || !directory || !searchQuery}>
+              {isSearching ? "検索中..." : "検索"}
+            </button>
+          </div>
         </form>
+        
+        <div style={{ marginTop: "10px" }}>
+          <button onClick={() => scanDirectory()} disabled={!directory}>
+            ディレクトリスキャン（テスト）
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -65,13 +133,55 @@ function App() {
         </div>
       )}
 
+      {searchResults.length > 0 && (
+        <div style={{ marginBottom: "20px" }}>
+          <h3>検索結果: {searchResults.length}件のファイルが見つかりました</h3>
+          <div style={{ maxHeight: "400px", overflow: "auto", border: "1px solid #ccc", padding: "10px" }}>
+            {console.log("Rendering search results:", searchResults)}
+            {searchResults.map((result, index) => {
+              console.log("Rendering result:", result);
+              return (
+              <div key={index} style={{ marginBottom: "20px", borderBottom: "1px solid #eee", paddingBottom: "10px" }}>
+                <div style={{ marginBottom: "5px" }}>
+                  <strong>{result.file_name}</strong>
+                  <button 
+                    onClick={() => openFile(result.file_path)}
+                    style={{ marginLeft: "10px", fontSize: "12px" }}
+                  >
+                    ファイルを開く
+                  </button>
+                  <button 
+                    onClick={() => {
+                      readFile(result.file_path);
+                      setSelectedSearchResult(result);
+                    }}
+                    style={{ marginLeft: "10px", fontSize: "12px" }}
+                  >
+                    プレビュー
+                  </button>
+                </div>
+                <div style={{ fontSize: "12px", color: "#666" }}>{result.file_path}</div>
+                <div style={{ fontSize: "12px", color: "#666" }}>
+                  サイズ: {(result.file_size / 1024).toFixed(1)} KB | 
+                  更新日: {new Date(result.modified * 1000).toLocaleString()} | 
+                  <strong>マッチ数: {result.matches.length}件</strong>
+                </div>
+              </div>
+            )})}
+          </div>
+        </div>
+      )}
+
       {files.length > 0 && (
         <div style={{ marginBottom: "20px" }}>
-          <h3>見つかったファイル（.txt, .md）: {files.length}件</h3>
+          <h3>スキャン結果（.txt, .md）: {files.length}件</h3>
           <div style={{ maxHeight: "200px", overflow: "auto", border: "1px solid #ccc", padding: "10px" }}>
             {files.map((file, index) => (
               <div key={index} style={{ cursor: "pointer", padding: "2px" }}>
-                <a onClick={() => readFile(file)} style={{ color: "#0066cc" }}>
+                <a onClick={() => {
+                  readFile(file);
+                  setSelectedSearchResult(null);
+                }} style={{ color: "#0066cc" }}>
                   {file}
                 </a>
               </div>
@@ -83,13 +193,53 @@ function App() {
       {selectedFile && (
         <div>
           <h3>ファイル内容プレビュー</h3>
-          <div style={{ border: "1px solid #ccc", padding: "10px", backgroundColor: "#f5f5f5" }}>
+          <div style={{ border: "1px solid #ccc", padding: "10px", backgroundColor: "#f5f5f5", color: "black" }}>
             <strong>ファイル名:</strong> {selectedFile.name}<br />
             <strong>パス:</strong> {selectedFile.path}<br />
-            <strong>内容（最初の200文字）:</strong><br />
-            <pre style={{ whiteSpace: "pre-wrap", marginTop: "10px" }}>
-              {selectedFile.content_preview}
-            </pre>
+            
+            {selectedSearchResult && (
+              <div style={{ marginTop: "10px" }}>
+                <strong>検索結果: "{searchQuery}" - {selectedSearchResult.matches.length}件のマッチ</strong>
+                <div style={{ maxHeight: "300px", overflow: "auto", marginTop: "10px", backgroundColor: "white", color: "black", padding: "10px", border: "1px solid #ddd" }}>
+                  {selectedSearchResult.matches.map((match, index) => (
+                    <div key={index} style={{ marginBottom: "15px", paddingBottom: "10px", borderBottom: "1px solid #eee" }}>
+                      <div style={{ fontSize: "12px", color: "#666", marginBottom: "5px" }}>
+                        行 {match.line_number}:
+                      </div>
+                      <pre style={{ margin: 0, whiteSpace: "pre-wrap", fontFamily: "monospace", fontSize: "12px", color: "black" }}>
+                        {match.context.split('\n').map((line, lineIndex) => {
+                          const lowerLine = line.toLowerCase();
+                          const lowerQuery = searchQuery.toLowerCase();
+                          const matchIndex = lowerLine.indexOf(lowerQuery);
+                          
+                          if (matchIndex !== -1) {
+                            return (
+                              <div key={lineIndex}>
+                                {line.substring(0, matchIndex)}
+                                <mark style={{ backgroundColor: "yellow" }}>
+                                  {line.substring(matchIndex, matchIndex + searchQuery.length)}
+                                </mark>
+                                {line.substring(matchIndex + searchQuery.length)}
+                              </div>
+                            );
+                          }
+                          return <div key={lineIndex}>{line}</div>;
+                        })}
+                      </pre>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            {!selectedSearchResult && (
+              <>
+                <strong>内容（最初の200文字）:</strong><br />
+                <pre style={{ whiteSpace: "pre-wrap", marginTop: "10px", color: "black" }}>
+                  {selectedFile.content_preview}
+                </pre>
+              </>
+            )}
           </div>
         </div>
       )}
